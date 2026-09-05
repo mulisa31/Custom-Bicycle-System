@@ -6,3 +6,5 @@ uploads/
 Thumbs.db
 dist/
 build/
+.env
+uploads/
