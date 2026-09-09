@@ -3,35 +3,32 @@
 
 const express = require('express');
 const { authenticate, authorize } = require('../middleware/auth');
-const { Order, OrderItem, Cart, CartItem, Component, User, sequelize } = require('../models');
+const { Order, OrderItem, Cart, CartItem, Component } = require('../models');
 const router = express.Router();
+
 
 // all order routes need login
 router.use(authenticate);
 
-// create a new order and copy cart items into it
+
+
+// create a new order from the active cart
 router.post('/', async (req, res) => {
   try {
     const { totalPrice, shippingProvince, shippingCity, shippingPostcode, shippingAddress } = req.body;
-
-    // fallback to user profile address if not provided
-    const userProfile = await User.findByPk(req.user.id);
-    const finalProvince = shippingProvince || userProfile?.province || null;
-    const finalCity = shippingCity || userProfile?.city || null;
-    const finalPostcode = shippingPostcode || userProfile?.postalCode || null;
-    const finalAddress = shippingAddress || userProfile?.address || null;
 
     const order = await Order.create({
       userId: req.user.id,
       status: 'pending',
       totalPrice: totalPrice || 0,
-      shippingProvince: finalProvince,
-      shippingCity: finalCity,
-      shippingPostcode: finalPostcode,
-      shippingAddress: finalAddress,
+      shippingProvince: shippingProvince || null,
+      shippingCity: shippingCity || null,
+      shippingPostcode: shippingPostcode || null,
+      shippingAddress: shippingAddress || null,
     });
 
-    // copy active cart items into order items
+
+    // copy items from the active cart into the order
     const cart = await Cart.findOne({
       where: { userId: req.user.id, status: 'active' },
       include: [{ model: CartItem, as: 'CartItems' }]
@@ -49,47 +46,67 @@ router.post('/', async (req, res) => {
       }
     }
 
-    res.status(201).json({ message: 'Order created', orderId: order.id });
+    res.status(201).json({ message: 'Order created', order: order });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// get logged-in user's orders (hide completed orders they deleted)
+
+
+// get the logged-in user's orders
 router.get('/my-orders', async (req, res) => {
   try {
     const orders = await Order.findAll({
       where: { userId: req.user.id, hiddenFromCustomer: false },
-      include: [{ model: OrderItem, include: [{ model: Component }] }],
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
+      include: [
+        {
+          model: OrderItem,
+          include: [{ model: Component }]
+        }
+      ]
     });
+
     res.status(200).json(orders);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// admin, clerk, manager can see all orders
+
+
+// admin, clerk, and manager can see every order
 router.get('/all', authorize('admin', 'clerk', 'manager'), async (req, res) => {
   try {
     const orders = await Order.findAll({
-      include: [{ model: User, attributes: ['id', 'name', 'email'] }, { model: OrderItem, include: [{ model: Component }] }],
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
+      include: [
+        {
+          model: OrderItem,
+          include: [{ model: Component }]
+        }
+      ]
     });
+
     res.status(200).json(orders);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// add a component to an existing order (bike builder)
+
+
+// add a component to an existing order (used by the bike builder)
 router.post('/:orderId/bike', async (req, res) => {
   try {
     const { orderId } = req.params;
     const { componentId, bicycleGroupId } = req.body;
 
     const order = await Order.findByPk(orderId);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
 
     const orderItem = await OrderItem.create({
       orderId: order.id,
@@ -104,80 +121,96 @@ router.post('/:orderId/bike', async (req, res) => {
   }
 });
 
-// update order status (clerk/admin) with stock reduction when ready
+
+// update order status (admin and clerk only)
 router.put('/:orderId/status', authorize('admin', 'clerk'), async (req, res) => {
-  const { orderId } = req.params;
-  const { status } = req.body;
-
-  const validStatuses = ['pending', 'assembling', 'ready', 'shipped', 'completed'];
-  if (!validStatuses.includes(status)) {
-    return res.status(400).json({ error: 'Invalid status' });
-  }
-
   try {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
     const order = await Order.findByPk(orderId);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-
-    const currentStatus = order.status;
-    const allowedTransitions = {
-      pending: ['assembling'],
-      assembling: ['ready'],
-      ready: ['shipped', 'completed'],
-      shipped: ['completed'],
-      completed: []
-    };
-
-    if (!allowedTransitions[currentStatus]?.includes(status)) {
-      return res.status(400).json({ error: `Cannot change from ${currentStatus} to ${status}` });
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
     }
 
-    // if moving to ready, reduce stock
-    if (status === 'ready' && currentStatus !== 'ready') {
-      const items = await OrderItem.findAll({ where: { orderId }, include: [{ model: Component }] });
-      for (let item of items) {
-        const comp = item.Component;
-        if (comp.stockQuantity < item.quantity) {
-          return res.status(400).json({ error: `Insufficient stock for ${comp.name}` });
-        }
-        await comp.update({ stockQuantity: comp.stockQuantity - item.quantity });
-      }
-    }
-
-    await order.update({ status });
-    res.status(200).json({ message: `Order status updated to ${status}` });
+    await order.update({ status: status });
+    res.status(200).json({ message: 'Order status updated', order: order });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// cancel pending order permanently
-router.delete('/:orderId/cancel', async (req, res) => {
+
+// mark order as completed (admin and clerk)
+router.put('/:orderId/fulfill', authorize('admin', 'clerk'), async (req, res) => {
   try {
     const { orderId } = req.params;
-    const order = await Order.findByPk(orderId);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.userId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    if (order.status !== 'pending') return res.status(400).json({ error: 'Only pending orders can be cancelled' });
 
+    const order = await Order.findByPk(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    await order.update({ status: 'completed' });
+    res.status(200).json({ message: 'Order fulfilled', order: order });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// Cancel a pending order and permanently delete it
+router.delete('/:orderId/cancel', authenticate, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findByPk(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (order.status !== 'pending') {
+      return res.status(400).json({ error: 'Only pending orders can be cancelled' });
+    }
+
+    // delete items first
     await OrderItem.destroy({ where: { orderId: order.id } });
+
+    // delete order
     await order.destroy();
-    res.status(200).json({ message: 'Order cancelled' });
+
+    res.status(200).json({ message: 'Order cancelled and removed' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// customer hides completed order
-router.put('/:orderId/hide', async (req, res) => {
+// Customer hides a completed order from their history, soft delete 
+router.put('/:orderId/hide', authenticate, async (req, res) => {
   try {
     const { orderId } = req.params;
-    const order = await Order.findByPk(orderId);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.userId !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    if (order.status !== 'completed') return res.status(400).json({ error: 'Only completed orders can be hidden' });
 
+    const order = await Order.findByPk(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (order.status !== 'completed') {
+      return res.status(400).json({ error: 'Only completed orders can be hidden' });
+    }
+
+    // soft delete- hide from customer, keep in database
     await order.update({ hiddenFromCustomer: true });
-    res.status(200).json({ message: 'Order hidden from history' });
+
+    res.status(200).json({ message: 'Order hidden from your history' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
