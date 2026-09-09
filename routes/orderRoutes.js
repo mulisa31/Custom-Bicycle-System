@@ -189,5 +189,31 @@ router.delete('/:orderId/cancel', authenticate, async (req, res) => {
   }
 });
 
+// Customer hides a completed order from their history, soft delete 
+router.put('/:orderId/hide', authenticate, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findByPk(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (order.status !== 'completed') {
+      return res.status(400).json({ error: 'Only completed orders can be hidden' });
+    }
+
+    // soft delete- hide from customer, keep in database
+    await order.update({ hiddenFromCustomer: true });
+
+    res.status(200).json({ message: 'Order hidden from your history' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;
