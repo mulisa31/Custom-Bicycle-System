@@ -202,13 +202,13 @@ const updateOrderStatus = async (req, res) => {
 
     const currentStatus = order.status;
 
-    const allowedTransitions = {
-      pending: ['assembling'],
-      assembling: ['ready'],
-      ready: ['shipped', 'completed'],
-      shipped: ['completed'],
-      completed: ['shipped']
-    };
+  const allowedTransitions = {
+  pending: ['assembling'],
+  assembling: ['ready'],
+  ready: ['shipped', 'completed'],
+  shipped: ['completed'],
+  completed: []
+};
 
     if (!allowedTransitions[currentStatus]?.includes(status)) {
       await transaction.rollback();
