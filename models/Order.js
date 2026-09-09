@@ -11,7 +11,8 @@ module.exports = (sequelize) => {
     shippingProvince: { type: DataTypes.STRING, allowNull: true },
     shippingCity: { type: DataTypes.STRING, allowNull: true },
     shippingPostcode: { type: DataTypes.STRING, allowNull: true },
-    shippingAddress: { type: DataTypes.STRING, allowNull: true }
+    shippingAddress: { type: DataTypes.STRING, allowNull: true },
+    hiddenFromCustomer: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }
   }, {
     tableName: 'Orders',
     timestamps: true

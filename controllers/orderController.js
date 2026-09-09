@@ -30,16 +30,25 @@ const checkCompatibility = async (groupId, newComponentId) => {
 // create a new empty order (usually when customer checks out)
 const createOrder = async (req, res) => {
   try {
-    const { totalPrice, shippingProvince, shippingCity, shippingPostcode, shippingAddress } = req.body;
+    const { totalPrice } = req.body;
+
+    // get user profile for address
+    const userProfile = await User.findByPk(req.user.id);
+    const shippingProvince = req.body.shippingProvince || userProfile?.province || null;
+    const shippingCity = req.body.shippingCity || userProfile?.city || null;
+    const shippingPostcode = req.body.shippingPostcode || userProfile?.postalCode || null;
+    const shippingAddress = req.body.shippingAddress || userProfile?.address || null;
+
     const newOrder = await Order.create({
       userId: req.user.id,
       status: 'pending',
       totalPrice: totalPrice || 0,
-      shippingProvince: shippingProvince || null,
-      shippingCity: shippingCity || null,
-      shippingPostcode: shippingPostcode || null,
-      shippingAddress: shippingAddress || null,
+      shippingProvince,
+      shippingCity,
+      shippingPostcode,
+      shippingAddress,
     });
+
     res.status(201).json({ message: 'Order created!', orderId: newOrder.id });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -134,7 +143,7 @@ const getAllOrders = async (req, res) => {
 const getUserOrders = async (req, res) => {
   try {
     const orders = await Order.findAll({
-      where: { userId: req.user.id },
+      where: { userId: req.user.id, hiddenFromCustomer: false },
       include: [{ model: OrderItem, include: [{ model: Component }] }],
       order: [['createdAt', 'DESC']]
     });

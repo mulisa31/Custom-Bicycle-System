@@ -1,8 +1,9 @@
 // This file handles user related operations for admin and profile pages.
+
 const bcrypt = require('bcryptjs');
 const { User } = require('../models');
 
-// get list of customers for the admin dashboard
+// get all customers (admin only)
 const getAllCustomers = async (req, res) => {
   try {
     const customers = await User.findAll({
@@ -16,11 +17,11 @@ const getAllCustomers = async (req, res) => {
   }
 };
 
-// fetch the logged-in user's own profile
+// get own profile
 const getProfile = async (req, res) => {
   try {
     const user = await User.findByPk(req.user.id, {
-      attributes: ['id', 'name', 'email', 'contact', 'role', 'preference', 'createdAt']
+      attributes: ['id', 'name', 'email', 'contact', 'role', 'preference', 'address', 'province', 'city', 'postalCode', 'createdAt']
     });
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.status(200).json(user);
@@ -29,13 +30,12 @@ const getProfile = async (req, res) => {
   }
 };
 
-// let a user update their own details
+// update own profile
 const updateProfile = async (req, res) => {
   try {
     const user = await User.findByPk(req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // only change fields that were actually sent
     if (req.body.name !== undefined && req.body.name !== '') {
       user.name = req.body.name;
     }
@@ -48,10 +48,21 @@ const updateProfile = async (req, res) => {
     if (req.body.password !== undefined && req.body.password !== '') {
       user.password = await bcrypt.hash(req.body.password, 10);
     }
+    if (req.body.address !== undefined) {
+      user.address = req.body.address;
+    }
+    if (req.body.province !== undefined) {
+      user.province = req.body.province;
+    }
+    if (req.body.city !== undefined) {
+      user.city = req.body.city;
+    }
+    if (req.body.postalCode !== undefined) {
+      user.postalCode = req.body.postalCode;
+    }
 
     await user.save();
 
-    // remove password before sending back
     const userResponse = user.toJSON();
     delete userResponse.password;
     res.status(200).json({ message: 'Profile updated', user: userResponse });
@@ -60,5 +71,4 @@ const updateProfile = async (req, res) => {
   }
 };
 
-// export the functions
 module.exports = { getAllCustomers, getProfile, updateProfile };

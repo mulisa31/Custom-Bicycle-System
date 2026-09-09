@@ -159,5 +159,35 @@ router.put('/:orderId/fulfill', authorize('admin', 'clerk'), async (req, res) =>
 });
 
 
+// Cancel a pending order and permanently delete it
+router.delete('/:orderId/cancel', authenticate, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findByPk(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (order.status !== 'pending') {
+      return res.status(400).json({ error: 'Only pending orders can be cancelled' });
+    }
+
+    // delete items first
+    await OrderItem.destroy({ where: { orderId: order.id } });
+
+    // delete order
+    await order.destroy();
+
+    res.status(200).json({ message: 'Order cancelled and removed' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 module.exports = router;
