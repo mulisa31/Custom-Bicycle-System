@@ -9,7 +9,7 @@ const router = express.Router();
 
 // make sure only logged-in users with the right role can see these reports
 router.use(authenticate);
-router.use(authorize('admin', 'clerk'));
+router.use(authorize('admin', 'clerk', 'manager'));
 
 // getting  pages for  stock, popularity, and sales data
 router.get('/stock', getStockReport);
