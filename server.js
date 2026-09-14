@@ -36,7 +36,7 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ message: 'Server is running smoothly!' });
 });
 
-// Only sync tables in development. In production, the database schema should already exist.
+// Only sync tables in development. 
 if (process.env.NODE_ENV !== 'production') {
   sequelize.sync({ alter: false })
     .then(() => {
