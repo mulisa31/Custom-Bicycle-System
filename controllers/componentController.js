@@ -42,9 +42,10 @@ const createComponent = async (req, res) => {
       image_url: image_url || null,
     });
     res.status(201).json({ message: 'Component created', component });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+} catch (error) {
+  console.error("REAL ERROR:", error.errors?.map(e => e.path + " -> " + e.message));
+  res.status(500).json({ error: error.message });
+}
 };
 
 // update an existing component
